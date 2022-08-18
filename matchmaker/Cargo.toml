@@ -1,0 +1,35 @@
+[package]
+name = "matchmaker"
+version = "0.1.0"
+edition = "2021"
+
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+path = "src/main.rs"
+name = "matchmaker"
+
+[dependencies]
+actix = "0.13.0"
+actix-web = "4.1.0"
+actix-web-actors = "4.1.0"
+anyhow = "1.0.62"
+argon2 = "0.4.1"
+diesel = { version = "2.0.0-rc.1", features = ["r2d2", "uuid", "postgres"] }
+dotenv = "0.15.0"
+futures-util = { version = "0.3.23", features = ["sink"] }
+rand = "0.8.5"
+secrecy = { version = "0.8.0", features = ["serde"] }
+serde = { version = "1.0.143", features = ["derive"] }
+thiserror = "1.0.32"
+tokio = { version = "1.20.1", features = ["macros", "rt-multi-thread"] }
+tracing = "0.1.36"
+tracing-subscriber = { version = "0.3.15", features = ["env-filter"]}
+uuid = { version = "1.1.2", features = ["serde"] }
+
+[dev-dependencies]
+client = { path = "../client" }
+once_cell = "1.13.1"
+reqwest = { version = "0.11.11", features = ["json", "cookies", "rustls-tls"] }

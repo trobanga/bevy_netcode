@@ -1,0 +1,22 @@
+[package]
+name = "client"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+path = "src/main.rs"
+name = "client"
+
+[dependencies]
+actix-codec = "0.5.0"
+actix-web = "4.1.0"
+anyhow = "1.0.62"
+awc = "3.0.0"
+futures-util = { version = "0.3.23", features = ["sink"] }
+tracing = "0.1.36"
+tracing-subscriber = { version = "0.3.15", features = ["env-filter"]}
