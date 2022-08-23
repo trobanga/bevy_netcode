@@ -1,38 +1,41 @@
 use diesel::prelude::*;
 use secrecy::{ExposeSecret, Secret};
+use uuid::Uuid;
+
+use crate::authentication::compute_password_hash;
 
 use super::models;
 use super::schema;
-use super::DbPool;
+use super::DbConnection;
 
 pub fn create_user(
     username: &str,
     pwd: Secret<String>,
-    pool: &DbPool,
+    conn: &mut DbConnection,
 ) -> Result<(), anyhow::Error> {
     use schema::users::dsl::*;
 
-    let mut conn = pool.get()?;
-
+    let pwd = compute_password_hash(pwd)?;
     let new_user = models::NewUser {
+        uuid: Uuid::new_v4(),
         name: username,
-        password: pwd.expose_secret(),
+        password: pwd.expose_secret().to_string(),
     };
 
-    diesel::insert_into(users)
-        .values(&new_user)
-        .execute(&mut conn)?;
+    diesel::insert_into(users).values(&new_user).execute(conn)?;
 
     Ok(())
 }
 
-pub fn find_user_by_name(uname: &str, pool: &DbPool) -> Result<models::User, anyhow::Error> {
+pub fn find_user_by_name(
+    uname: &str,
+    conn: &mut DbConnection,
+) -> Result<Option<models::User>, anyhow::Error> {
     use schema::users::dsl::*;
-
-    let mut conn = pool.get()?;
     let user = users
         .filter(name.eq(uname.to_string()))
-        .first::<models::User>(&mut conn)?;
+        .first::<models::User>(conn)
+        .optional()?;
 
     Ok(user)
 }
@@ -40,13 +43,12 @@ pub fn find_user_by_name(uname: &str, pool: &DbPool) -> Result<models::User, any
 pub fn set_password_for_user(
     uid: uuid::Uuid,
     new_password: Secret<String>,
-    pool: &DbPool,
+    conn: &mut DbConnection,
 ) -> Result<(), anyhow::Error> {
     use schema::users::dsl::*;
 
-    let mut conn = pool.get()?;
     diesel::update(users.find(uid))
         .set(password.eq(new_password.expose_secret()))
-        .execute(&mut conn)?;
+        .execute(conn)?;
     Ok(())
 }

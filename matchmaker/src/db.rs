@@ -9,20 +9,21 @@ mod models;
 mod schema;
 
 pub type DbPool = r2d2::Pool<ConnectionManager<PgConnection>>;
+pub type DbConnection = PgConnection;
 
-pub fn create_pool() -> DbPool {
+pub fn database_url_from_env() -> String {
     dotenv().ok();
-    let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    env::var("DATABASE_URL").expect("DATABASE_URL must be set")
+}
 
-    let manager = ConnectionManager::<PgConnection>::new(database_url);
+pub fn create_pool<S: AsRef<str>>(database_url: S) -> DbPool {
+    let manager = ConnectionManager::<DbConnection>::new(database_url.as_ref());
     r2d2::Pool::builder()
         .build(manager)
         .expect("Failed to create db pool")
 }
 
-pub fn establish_connection() -> PgConnection {
-    dotenv().ok();
-
-    let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-    PgConnection::establish(&database_url).expect(&format!("Error connecting to {}", database_url))
+pub fn establish_connection<S: AsRef<str>>(database_url: S) -> DbConnection {
+    PgConnection::establish(database_url.as_ref())
+        .expect(&format!("Error connecting to {}", database_url.as_ref()))
 }

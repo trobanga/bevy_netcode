@@ -17,7 +17,9 @@ actix-web = "4.1.0"
 actix-web-actors = "4.1.0"
 anyhow = "1.0.62"
 argon2 = "0.4.1"
+base64 = "0.13.0"
 diesel = { version = "2.0.0-rc.1", features = ["r2d2", "uuid", "postgres"] }
+diesel_migrations = "2.0.0-rc.1"
 dotenv = "0.15.0"
 futures-util = { version = "0.3.23", features = ["sink"] }
 rand = "0.8.5"
@@ -27,7 +29,8 @@ thiserror = "1.0.32"
 tokio = { version = "1.20.1", features = ["macros", "rt-multi-thread"] }
 tracing = "0.1.36"
 tracing-subscriber = { version = "0.3.15", features = ["env-filter"]}
-uuid = { version = "1.1.2", features = ["serde"] }
+url = "2.2.2"
+uuid = { version = "1.1.2", features = ["serde", "v4"] }
 
 [dev-dependencies]
 client = { path = "../client" }

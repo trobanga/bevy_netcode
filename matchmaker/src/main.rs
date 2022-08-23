@@ -1,6 +1,9 @@
 use tracing_subscriber::EnvFilter;
 
-use matchmaker::configuration::{ApplicationSettings, Settings};
+use matchmaker::{
+    db::{create_pool, database_url_from_env},
+    settings::{ApplicationSettings, Settings},
+};
 
 fn setup() {
     if std::env::var("RUST_LOG").is_err() {
@@ -20,7 +23,7 @@ async fn main() -> anyhow::Result<()> {
             port: 3648,
         },
     };
-    matchmaker::application::Application::build(settings)
+    matchmaker::application::Application::build(settings, create_pool(database_url_from_env()))
         .await?
         .run_until_stopped()
         .await?;

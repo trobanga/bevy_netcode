@@ -1,12 +1,60 @@
+use actix_web::http::{
+    header::{self, HeaderMap, HeaderValue},
+    StatusCode,
+};
+use actix_web::{HttpResponse, ResponseError};
 use anyhow::Context;
 use argon2::password_hash::SaltString;
-use argon2::{Algorithm, Argon2, Params, PasswordHash, PasswordHasher, PasswordVerifier, Version};
+use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
 use secrecy::{ExposeSecret, Secret};
 
 use crate::{
-    db::{self, DbPool},
+    db::{self, DbConnection},
     spawn_blocking_with_tracing,
 };
+
+pub async fn basic_authentication(
+    headers: &HeaderMap,
+    conn: &mut DbConnection,
+) -> Result<uuid::Uuid, AuthError> {
+    // The header value, if present, must be a valid UTF8 string
+    let header_value = headers
+        .get("Authorization")
+        .context("The 'Authorization' header was missing")
+        .map_err(AuthError::InvalidCredentials)?
+        .to_str()
+        .context("The 'Authorization' header was not a valid UTF8 string.")
+        .map_err(AuthError::InvalidCredentials)?;
+    let base64encoded_segment = header_value
+        .strip_prefix("Basic ")
+        .context("The authorization scheme was not 'Basic'.")
+        .map_err(AuthError::InvalidCredentials)?;
+    let decoded_bytes = base64::decode_config(base64encoded_segment, base64::STANDARD)
+        .context("Failed to base64-decode 'Basic' credentials.")
+        .map_err(AuthError::InvalidCredentials)?;
+    let decoded_credentials = String::from_utf8(decoded_bytes)
+        .context("The decoded credential string is not valid UTF8.")
+        .map_err(AuthError::InvalidCredentials)?;
+
+    // Split into two segments, using ':' as delimitator
+    let mut credentials = decoded_credentials.splitn(2, ':');
+    let username = credentials
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("A username must be provided in 'Basic' auth."))
+        .map_err(AuthError::InvalidCredentials)?
+        .to_string();
+    let password = credentials
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("A password must be provided in 'Basic' auth."))
+        .map_err(AuthError::InvalidCredentials)?
+        .to_string();
+
+    let credentials = Credentials {
+        username,
+        password: Secret::new(password),
+    };
+    validate_credentials(credentials, conn).await
+}
 
 #[derive(thiserror::Error, Debug)]
 pub enum AuthError {
@@ -19,22 +67,42 @@ pub enum AuthError {
     #[error("Failed hash password")]
     FailedToHashPassword,
 
+    #[error("Unknown user")]
+    UnknownUser,
+
     #[error(transparent)]
     UnexpectedError(#[from] anyhow::Error),
 }
 
+impl ResponseError for AuthError {
+    fn error_response(&self) -> HttpResponse {
+        match self {
+            AuthError::UnexpectedError(_) => HttpResponse::new(StatusCode::INTERNAL_SERVER_ERROR),
+            _ => {
+                let mut response = HttpResponse::new(StatusCode::UNAUTHORIZED);
+                let header_value = HeaderValue::from_str(r#"Basic realm="login""#).unwrap();
+                response
+                    .headers_mut()
+                    .insert(header::WWW_AUTHENTICATE, header_value);
+                response
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct Credentials {
     pub username: String,
     pub password: Secret<String>,
 }
 
-#[tracing::instrument(name = "Validate credentials", skip(credentials, pool))]
+#[tracing::instrument(name = "Validate credentials", skip(credentials, conn))]
 pub async fn validate_credentials(
     credentials: Credentials,
-    pool: &DbPool,
+    conn: &mut DbConnection,
 ) -> Result<uuid::Uuid, AuthError> {
     let (stored_user_id, stored_password_hash) =
-        get_stored_credentials(&credentials.username, pool).await?;
+        get_stored_credentials(&credentials.username, conn).await?;
     let user_id = Some(stored_user_id);
     let expected_password_hash = stored_password_hash;
 
@@ -49,13 +117,17 @@ pub async fn validate_credentials(
         .map_err(AuthError::InvalidCredentials)
 }
 
-#[tracing::instrument(name = "Get stored credentials", skip(username, pool))]
+#[tracing::instrument(name = "Get stored credentials", skip(username, conn))]
 async fn get_stored_credentials(
     username: &str,
-    pool: &DbPool,
-) -> Result<(uuid::Uuid, Secret<String>), anyhow::Error> {
-    let user = db::actions::find_user_by_name(username, pool)?;
-    Ok((user.uuid, Secret::new(user.password)))
+    conn: &mut DbConnection,
+) -> Result<(uuid::Uuid, Secret<String>), AuthError> {
+    let user = db::actions::find_user_by_name(username, conn)?;
+    if let Some(user) = user {
+        Ok((user.uuid, Secret::new(user.password)))
+    } else {
+        Err(AuthError::UnknownUser)
+    }
 }
 
 #[tracing::instrument(
@@ -78,28 +150,24 @@ fn verify_password_hash(
     Ok(())
 }
 
-#[tracing::instrument(name = "Change password", skip(password, pool))]
+#[tracing::instrument(name = "Change password", skip(password, conn))]
 pub async fn change_password(
     user_id: uuid::Uuid,
     password: Secret<String>,
-    pool: &DbPool,
+    conn: &mut DbConnection,
 ) -> Result<(), anyhow::Error> {
     let password_hash =
         spawn_blocking_with_tracing(move || compute_password_hash(password)).await??;
-    db::actions::set_password_for_user(user_id, password_hash, pool)?;
+    db::actions::set_password_for_user(user_id, password_hash, conn)?;
     Ok(())
 }
 
-fn compute_password_hash(password: Secret<String>) -> Result<Secret<String>, AuthError> {
+pub fn compute_password_hash(password: Secret<String>) -> Result<Secret<String>, AuthError> {
     let salt = SaltString::generate(&mut rand::thread_rng());
-    let password_hash = Argon2::new(
-        Algorithm::Argon2id,
-        Version::V0x13,
-        Params::new(15000, 2, 1, None).unwrap(),
-    )
-    .hash_password(password.expose_secret().as_bytes(), &salt)
-    .map_err(|_| AuthError::FailedToHashPassword)?
-    .to_string();
+    let password_hash = Argon2::default()
+        .hash_password(password.expose_secret().as_bytes(), &salt)
+        .map_err(|_| AuthError::FailedToHashPassword)?
+        .to_string();
     Ok(Secret::new(password_hash))
 }
 

@@ -4,9 +4,9 @@ extern crate diesel;
 use actix_web::rt::task::JoinHandle;
 
 pub mod application;
-mod authentication;
-pub mod configuration;
-mod db;
+pub mod authentication;
+pub mod db;
+pub mod settings;
 
 pub fn spawn_blocking_with_tracing<F, R>(f: F) -> JoinHandle<R>
 where

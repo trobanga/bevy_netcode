@@ -1,11 +1,14 @@
-use client::Client;
-use futures_util::{SinkExt as _, StreamExt as _};
 use once_cell::sync::Lazy;
 
 use matchmaker::{
     application,
-    configuration::{ApplicationSettings, Settings},
+    db::{self, actions::create_user, DbPool},
+    settings::{ApplicationSettings, Settings},
 };
+use secrecy::Secret;
+use tracing::info;
+
+use crate::test_db::{self, TestDb};
 
 static TRACING: Lazy<()> = Lazy::new(|| {
     if std::env::var("RUST_LOG").is_err() {
@@ -16,9 +19,17 @@ static TRACING: Lazy<()> = Lazy::new(|| {
         .init();
 });
 
+pub fn enable_tracing() {
+    Lazy::force(&TRACING);
+}
+
 pub struct TestApp {
     pub address: String,
     pub port: u16,
+    pub db_pool: DbPool,
+    pub user: TestUser,
+    #[allow(dead_code)]
+    test_db: TestDb,
 }
 
 impl TestApp {
@@ -39,49 +50,48 @@ pub async fn spawn_app() -> TestApp {
             port: 0,
         },
     };
-    let app = application::Application::build(settings)
+
+    let test_db = test_db::TestDb::new();
+    info!(?test_db);
+    let db_pool = db::create_pool(test_db.url());
+    let mut conn = db_pool.get().unwrap();
+    test_db.run_migrations(&mut conn).unwrap();
+
+    let app = application::Application::build(settings, db_pool.clone())
         .await
         .expect("Failed to build application");
     let port = app.port();
     let _ = tokio::spawn(app.run_until_stopped());
 
+    let user = TestUser::default();
+    user.store(&db_pool);
+
     TestApp {
         address: "127.0.0.1".to_string(),
         port,
+        db_pool,
+        user,
+        test_db,
     }
 }
 
-#[actix_web::test]
-async fn spawn_test_app() {
-    let test_app = spawn_app().await;
-    let path = test_app.path("health_check");
-    let response = reqwest::Client::new()
-        .get(&path)
-        .send()
-        .await
-        .expect("Failed to execute request.");
-    assert_eq!(response.status(), 200);
+pub struct TestUser {
+    name: String,
+    password: String,
 }
 
-#[actix_web::test]
-async fn client_ping_pong() -> anyhow::Result<()> {
-    let app = spawn_app().await;
-    let address = format!("ws://{}:{}/", &app.address, app.port);
-    let client = Client { address };
-    let (_res, mut ws) = client.connect().await?;
-
-    let mut got_pong = false;
-    ws.send(client::ws::Message::Ping(actix_web::web::Bytes::new()))
-        .await
-        .unwrap();
-    if let Some(msg) = ws.next().await {
-        match msg {
-            Ok(client::ws::Frame::Pong(_)) => {
-                got_pong = true;
-            }
-            _ => {}
+impl Default for TestUser {
+    fn default() -> Self {
+        Self {
+            name: "Alice".to_string(),
+            password: "I like Bob".to_string(),
         }
     }
-    assert!(got_pong);
-    Ok(())
+}
+
+impl TestUser {
+    pub fn store(&self, pool: &DbPool) {
+        let mut conn = pool.get().expect("Could not get DbConnection");
+        create_user(&self.name, Secret::new(self.password.clone()), &mut conn).unwrap();
+    }
 }
