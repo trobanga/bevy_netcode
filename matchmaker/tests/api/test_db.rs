@@ -44,9 +44,10 @@ impl TestDb {
     }
 
     pub fn conn(&self) -> PgConnection {
-        PgConnection::establish(&self.url.as_str()).unwrap()
+        PgConnection::establish(self.url.as_str()).unwrap()
     }
 
+    #[allow(dead_code)]
     pub fn leak(&mut self) {
         self.delete_on_drop = false;
     }

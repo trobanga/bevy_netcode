@@ -12,7 +12,7 @@ async fn password_hashed() {
     enable_tracing();
     let test_db = TestDb::new();
     let pool = db::create_pool(test_db.url());
-    let mut conn = pool.get().expect("Could not establish db connection");
+    let mut conn = test_db.conn();
     test_db.run_migrations(&mut conn).unwrap();
 
     let user = TestUser::default();
@@ -28,7 +28,7 @@ async fn password_verification() {
     enable_tracing();
     let test_db = TestDb::new();
     let pool = db::create_pool(test_db.url());
-    let mut conn = pool.get().expect("Could not establish db connection");
+    let mut conn = test_db.conn();
     test_db.run_migrations(&mut conn).unwrap();
 
     let user = TestUser::default();

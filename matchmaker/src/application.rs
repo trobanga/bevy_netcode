@@ -87,6 +87,5 @@ async fn index(
 ) -> Result<HttpResponse, Error> {
     let mut conn = pool.get().expect("Could not get DbConnection");
     basic_authentication(req.headers(), &mut conn).await?;
-    let resp = ws::start(Ws {}, &req, stream);
-    resp
+    ws::start(Ws {}, &req, stream)
 }

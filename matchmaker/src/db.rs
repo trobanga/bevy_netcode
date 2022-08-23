@@ -25,5 +25,5 @@ pub fn create_pool<S: AsRef<str>>(database_url: S) -> DbPool {
 
 pub fn establish_connection<S: AsRef<str>>(database_url: S) -> DbConnection {
     PgConnection::establish(database_url.as_ref())
-        .expect(&format!("Error connecting to {}", database_url.as_ref()))
+        .unwrap_or_else(|_| panic!("Error connecting to {}", database_url.as_ref()))
 }
