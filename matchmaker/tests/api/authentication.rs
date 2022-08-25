@@ -1,5 +1,5 @@
 use crate::{
-    helper::{enable_tracing, TestApp, TestAppBuilder, TestUser},
+    helper::{enable_tracing, TestAppBuilder, TestUser},
     test_db::TestDb,
 };
 use matchmaker::{

@@ -52,3 +52,12 @@ pub fn set_password_for_user(
         .execute(conn)?;
     Ok(())
 }
+
+pub fn display_users(conn: &mut DbConnection) -> Result<(), anyhow::Error> {
+    use schema::users::dsl::*;
+    for user in users.load::<models::User>(conn)? {
+        println!("{user}");
+    }
+
+    Ok(())
+}

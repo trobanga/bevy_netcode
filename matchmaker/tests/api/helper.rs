@@ -70,12 +70,6 @@ impl TestApp {
         format!("{}/{}", &self.base_address(), path)
     }
 
-    pub fn add_user(&mut self, name: &str, password: &str) {
-        let user = TestUser::new(name, password);
-        user.store(&self.db_pool);
-        self.users.push(user);
-    }
-
     pub fn set_users(&mut self, users: Vec<TestUser>) {
         self.users = users;
     }
@@ -100,8 +94,7 @@ impl TestAppBuilder {
         let mut app = TestApp::new();
 
         let users = if self.users.len() == 0 {
-            let user = TestUser::default();
-            vec![user]
+            vec![TestUser::default()]
         } else {
             self.users
         };
@@ -113,6 +106,7 @@ impl TestAppBuilder {
     }
 }
 
+#[derive(Debug)]
 pub struct TestUser {
     name: String,
     password: String,
