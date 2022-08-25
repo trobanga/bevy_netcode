@@ -6,7 +6,6 @@ use matchmaker::{
     settings::{ApplicationSettings, Settings},
 };
 use secrecy::Secret;
-use tracing::info;
 
 use crate::test_db::{self, TestDb};
 
@@ -27,12 +26,42 @@ pub struct TestApp {
     pub address: String,
     pub port: u16,
     pub db_pool: DbPool,
-    pub user: TestUser,
+    pub users: Vec<TestUser>,
     #[allow(dead_code)]
     test_db: TestDb,
 }
 
 impl TestApp {
+    pub fn new() -> Self {
+        Lazy::force(&TRACING);
+
+        let test_db = test_db::TestDb::new();
+        let db_pool = db::create_pool(test_db.url());
+        let mut conn = db_pool.get().unwrap();
+        test_db.run_migrations(&mut conn).unwrap();
+        Self {
+            address: "127.0.0.1".to_string(),
+            port: 0,
+            db_pool,
+            users: vec![],
+            test_db,
+        }
+    }
+
+    pub async fn spawn_app(&mut self) {
+        let settings = Settings {
+            application: ApplicationSettings {
+                host: "127.0.0.1".to_string(),
+                port: 0,
+            },
+        };
+        let app = application::Application::build(settings, self.db_pool.clone())
+            .await
+            .expect("Failed to build application");
+        self.port = app.port();
+        let _ = tokio::spawn(app.run_until_stopped());
+    }
+
     pub fn base_address(&self) -> String {
         format!("http://{}:{}", &self.address, self.port)
     }
@@ -40,38 +69,47 @@ impl TestApp {
     pub fn path(&self, path: &str) -> String {
         format!("{}/{}", &self.base_address(), path)
     }
+
+    pub fn add_user(&mut self, name: &str, password: &str) {
+        let user = TestUser::new(name, password);
+        user.store(&self.db_pool);
+        self.users.push(user);
+    }
+
+    pub fn set_users(&mut self, users: Vec<TestUser>) {
+        self.users = users;
+    }
 }
 
-pub async fn spawn_app() -> TestApp {
-    Lazy::force(&TRACING);
-    let settings = Settings {
-        application: ApplicationSettings {
-            host: "127.0.0.1".to_string(),
-            port: 0,
-        },
-    };
+#[derive(Default)]
+pub struct TestAppBuilder {
+    users: Vec<TestUser>,
+}
 
-    let test_db = test_db::TestDb::new();
-    info!(?test_db);
-    let db_pool = db::create_pool(test_db.url());
-    let mut conn = db_pool.get().unwrap();
-    test_db.run_migrations(&mut conn).unwrap();
+impl TestAppBuilder {
+    pub fn new() -> Self {
+        Self::default()
+    }
 
-    let app = application::Application::build(settings, db_pool.clone())
-        .await
-        .expect("Failed to build application");
-    let port = app.port();
-    let _ = tokio::spawn(app.run_until_stopped());
+    pub fn users(mut self, users: Vec<TestUser>) -> Self {
+        self.users = users;
+        self
+    }
 
-    let user = TestUser::default();
-    user.store(&db_pool);
+    pub fn build(self) -> TestApp {
+        let mut app = TestApp::new();
 
-    TestApp {
-        address: "127.0.0.1".to_string(),
-        port,
-        db_pool,
-        user,
-        test_db,
+        let users = if self.users.len() == 0 {
+            let user = TestUser::default();
+            vec![user]
+        } else {
+            self.users
+        };
+        for user in &users {
+            user.store(&app.db_pool);
+        }
+        app.set_users(users);
+        app
     }
 }
 
@@ -90,6 +128,13 @@ impl Default for TestUser {
 }
 
 impl TestUser {
+    pub fn new(name: &str, password: &str) -> Self {
+        Self {
+            name: name.to_string(),
+            password: password.to_string(),
+        }
+    }
+
     pub fn store(&self, pool: &DbPool) {
         let mut conn = pool.get().expect("Could not get DbConnection");
         create_user(&self.name, Secret::new(self.password.clone()), &mut conn).unwrap();

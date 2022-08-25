@@ -1,5 +1,5 @@
 use crate::{
-    helper::{enable_tracing, spawn_app, TestUser},
+    helper::{enable_tracing, TestApp, TestAppBuilder, TestUser},
     test_db::TestDb,
 };
 use matchmaker::{
@@ -47,7 +47,8 @@ async fn password_verification() {
 
 #[actix_web::test]
 async fn missing_auth_are_rejected_with_reqwest() -> anyhow::Result<()> {
-    let app = spawn_app().await;
+    let mut app = TestAppBuilder::new().build();
+    app.spawn_app().await;
     let address = format!("http://{}:{}/", &app.address, app.port);
     let response = reqwest::Client::new().get(&address).send().await?;
     assert_eq!(response.status(), 401);
@@ -56,7 +57,8 @@ async fn missing_auth_are_rejected_with_reqwest() -> anyhow::Result<()> {
 
 #[actix_web::test]
 async fn wrong_auth_are_rejected_with_reqwest() -> anyhow::Result<()> {
-    let app = spawn_app().await;
+    let mut app = TestAppBuilder::new().build();
+    app.spawn_app().await;
     let address = format!("http://{}:{}/", &app.address, app.port);
     let response = reqwest::Client::new()
         .get(&address)
@@ -76,7 +78,8 @@ async fn wrong_auth_are_rejected_with_reqwest() -> anyhow::Result<()> {
 
 #[actix_web::test]
 async fn right_auth_pass_with_reqwest_yield_bad_request() -> anyhow::Result<()> {
-    let app = spawn_app().await;
+    let mut app = TestAppBuilder::new().build();
+    app.spawn_app().await;
     let address = format!("http://{}:{}/", &app.address, app.port);
     let response = reqwest::Client::new()
         .get(&address)
@@ -88,8 +91,9 @@ async fn right_auth_pass_with_reqwest_yield_bad_request() -> anyhow::Result<()> 
 }
 
 #[actix_web::test]
-async fn missing_auth_are_rejected() -> anyhow::Result<()> {
-    let app = spawn_app().await;
+async fn correct_auth_are_redirected() -> anyhow::Result<()> {
+    let mut app = TestAppBuilder::new().build();
+    app.spawn_app().await;
     let address = format!("ws://{}:{}/", &app.address, app.port);
     let client = client::Client { address };
     let (res, _ws) = client.connect("Alice", Some("I like Bob")).await?;

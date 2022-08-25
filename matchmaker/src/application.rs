@@ -1,10 +1,14 @@
-use actix::{Actor, StreamHandler};
+use actix::*;
 use actix_web::{dev::Server, get, web, App, Error, HttpRequest, HttpResponse, HttpServer};
-use actix_web_actors::ws;
 use std::net::TcpListener;
-use tracing::{debug, info};
+use tracing::info;
 
 use crate::{authentication::basic_authentication, db::DbPool, settings::Settings};
+
+use self::moderator::Moderator;
+
+mod client;
+mod moderator;
 
 pub struct Application {
     port: u16,
@@ -39,9 +43,11 @@ pub fn create_server_with_pool(
     pool: DbPool,
 ) -> Result<Server, anyhow::Error> {
     let pool = web::Data::new(pool);
+    let moderator = web::Data::new(Moderator::default().start());
     Ok(HttpServer::new(move || {
         App::new()
             .app_data(pool.clone())
+            .app_data(moderator.clone())
             .service(health_check)
             .service(index)
     })
@@ -54,38 +60,15 @@ async fn health_check() -> HttpResponse {
     HttpResponse::Ok().finish()
 }
 
-/// Define HTTP actor
-struct Ws;
-
-impl Actor for Ws {
-    type Context = ws::WebsocketContext<Self>;
-
-    // /// Method is called on actor start. We start the heartbeat process here.
-    // fn started(&mut self, ctx: &mut Self::Context) {
-    //     self.hb(ctx);
-    // }
-}
-
-/// Handler for ws::Message message
-impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for Ws {
-    fn handle(&mut self, msg: Result<ws::Message, ws::ProtocolError>, ctx: &mut Self::Context) {
-        debug!(?msg);
-        match msg {
-            Ok(ws::Message::Ping(msg)) => ctx.pong(&msg),
-            Ok(ws::Message::Text(text)) => ctx.text(text),
-            Ok(ws::Message::Binary(bin)) => ctx.binary(bin),
-            _ => (),
-        }
-    }
-}
-
 #[get("/")]
 async fn index(
     req: HttpRequest,
     stream: web::Payload,
     pool: web::Data<DbPool>,
+    moderator: web::Data<Addr<Moderator>>,
 ) -> Result<HttpResponse, Error> {
     let mut conn = pool.get().expect("Could not get DbConnection");
-    basic_authentication(req.headers(), &mut conn).await?;
-    ws::start(Ws {}, &req, stream)
+    let id = basic_authentication(req.headers(), &mut conn).await?;
+    let websocket = client::WsClient::new(id, moderator.get_ref().clone());
+    client::start(websocket, &req, stream)
 }
