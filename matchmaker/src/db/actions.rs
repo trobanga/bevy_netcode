@@ -1,5 +1,6 @@
 use diesel::prelude::*;
 use secrecy::{ExposeSecret, Secret};
+use tracing::info;
 use uuid::Uuid;
 
 use crate::authentication::compute_password_hash;
@@ -56,7 +57,7 @@ pub fn set_password_for_user(
 pub fn display_users(conn: &mut DbConnection) -> Result<(), anyhow::Error> {
     use schema::users::dsl::*;
     for user in users.load::<models::User>(conn)? {
-        println!("{user}");
+        info!("{user}");
     }
 
     Ok(())

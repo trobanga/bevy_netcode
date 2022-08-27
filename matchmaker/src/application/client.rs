@@ -52,7 +52,12 @@ impl Handler<moderator::Message> for WsClient {
 
     fn handle(&mut self, msg: moderator::Message, ctx: &mut Self::Context) -> Self::Result {
         match msg {
-            moderator::Message::NewPeer { id } => info!("Connect to {id}"),
+            moderator::Message::NewPeer { id } => {
+                info!("Tell client to connect to {id}");
+                let msg = client::message::Message::NewPeer { id };
+                ctx.text(serde_json::to_string(&msg).unwrap());
+                info!("Ok, told her");
+            }
             moderator::Message::PeerDisconnected { id: _ } => todo!(),
         }
     }
@@ -66,7 +71,7 @@ impl Actor for WsClient {
         self.heartbeat(ctx);
 
         let addr = ctx.address();
-        info!("WsClient started, trying to connect");
+        info!("WsClient {} started, trying to connect", self.id);
         self.moderator
             .send(moderator::Connect {
                 id: self.id,
@@ -74,15 +79,18 @@ impl Actor for WsClient {
             })
             .into_actor(self)
             .then(|res, _act, ctx| {
-                info!("bla: {:?}", res);
                 match res {
-                    Ok(res) => {
-                        if let Err(moderator::Error::AlreadyConnected) = res {
+                    Ok(res) => match res {
+                        Ok(_) => info!("Successfully connected"),
+                        Err(moderator::Error::AlreadyConnected) => {
                             error!("Already connected. Stopping.");
                             ctx.stop();
                         }
+                    },
+                    Err(e) => {
+                        error!(?e);
+                        ctx.stop();
                     }
-                    _ => ctx.stop(),
                 }
                 fut::ready(())
             })

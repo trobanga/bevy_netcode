@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use actix::prelude::*;
+use tracing::info;
 use uuid::Uuid;
 
 #[derive(Message)]
@@ -42,6 +43,7 @@ impl Handler<Connect> for Moderator {
     type Result = Result<(), Error>;
 
     fn handle(&mut self, msg: Connect, ctx: &mut Self::Context) -> Self::Result {
+        info!("Client {} requests connection", msg.id);
         if self.clients.contains_key(&msg.id) {
             return Err(Error::AlreadyConnected);
         }

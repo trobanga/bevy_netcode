@@ -2,6 +2,7 @@ use crate::{
     helper::{enable_tracing, TestAppBuilder, TestUser},
     test_db::TestDb,
 };
+use client::RtcConfig;
 use matchmaker::{
     authentication::{validate_credentials, Credentials},
     db::{self, actions::find_user_by_name},
@@ -94,9 +95,10 @@ async fn right_auth_pass_with_reqwest_yield_bad_request() -> anyhow::Result<()> 
 async fn correct_auth_are_redirected() -> anyhow::Result<()> {
     let mut app = TestAppBuilder::new().build();
     app.spawn_app().await;
-    let address = format!("ws://{}:{}/", &app.address, app.port);
-    let client = client::Client { address };
-    let (res, _ws) = client.connect("Alice", Some("I like Bob")).await?;
+    let client = client::Client::new(app.address, app.port, RtcConfig::default());
+    let (res, _ws) = client
+        .establish_connection("Alice", Some("I like Bob"))
+        .await?;
 
     assert_eq!(res.status(), 101);
     Ok(())

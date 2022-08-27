@@ -1,8 +1,4 @@
-use actix_web::web::Bytes;
-use awc::ws;
-use client::Client;
-use futures_util::{SinkExt as _, StreamExt as _};
-use tracing::{debug, info};
+use client::{Client, RtcConfig};
 use tracing_subscriber::EnvFilter;
 
 fn setup() {
@@ -18,24 +14,9 @@ fn setup() {
 async fn main() -> anyhow::Result<()> {
     setup();
 
-    let client = Client {
-        address: "ws://127.0.0.1:3648/".to_string(),
-    };
+    let mut client = Client::new("ws://127.0.0.1", 3648, RtcConfig::default());
 
-    let (res, mut ws) = client.connect().await?;
+    client.connect("", "").await?;
 
-    debug!(?res);
-
-    info!("Ping");
-    ws.send(ws::Message::Ping(Bytes::new())).await.unwrap();
-
-    if let Some(msg) = ws.next().await {
-        match msg {
-            Ok(ws::Frame::Pong(_)) => {
-                info!("Pong");
-            }
-            _ => {}
-        }
-    }
     Ok(())
 }
