@@ -1,4 +1,4 @@
-use client::{Client, RtcConfig};
+use client::{peer::RtcConfig, Client};
 use tracing_subscriber::EnvFilter;
 
 fn setup() {
@@ -14,9 +14,9 @@ fn setup() {
 async fn main() -> anyhow::Result<()> {
     setup();
 
-    let mut client = Client::new("ws://127.0.0.1", 3648, RtcConfig::default());
+    let mut client = Client::new("ws://127.0.0.1", 3648, RtcConfig::default(), "", "").await?;
 
-    client.connect("", "").await?;
+    client.run().await?;
 
     Ok(())
 }

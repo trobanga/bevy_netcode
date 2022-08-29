@@ -1,8 +1,16 @@
-use std::time::{Duration, Instant};
+use std::{
+    collections::HashMap,
+    time::{Duration, Instant},
+};
+use uuid::Uuid;
 
 use actix::prelude::*;
 use actix_web_actors::ws;
 use tracing::{debug, error, info};
+
+pub use ws::start;
+
+use super::moderator::{self, Moderator};
 
 /// How often heartbeat pings are sent
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
@@ -15,6 +23,7 @@ pub struct WsClient {
     id: Uuid,
     heartbeat: Instant,
     moderator: Addr<Moderator>,
+    peers: HashMap<Uuid, Recipient<moderator::Message>>,
 }
 
 impl WsClient {
@@ -23,6 +32,7 @@ impl WsClient {
             id,
             heartbeat: Instant::now(),
             moderator,
+            peers: Default::default(),
         }
     }
 
@@ -52,13 +62,19 @@ impl Handler<moderator::Message> for WsClient {
 
     fn handle(&mut self, msg: moderator::Message, ctx: &mut Self::Context) -> Self::Result {
         match msg {
-            moderator::Message::NewPeer { id } => {
+            moderator::Message::NewPeer { id, addr } => {
                 info!("Tell client to connect to {id}");
+                self.peers.insert(id, addr);
                 let msg = client::message::Message::NewPeer { id };
                 ctx.text(serde_json::to_string(&msg).unwrap());
                 info!("Ok, told her");
             }
+            moderator::Message::Peers(peers) => self.peers = peers,
             moderator::Message::PeerDisconnected { id: _ } => todo!(),
+            moderator::Message::PeerMessage(msg) => {
+                debug!(?msg);
+                ctx.text(serde_json::to_string(&msg).unwrap());
+            }
         }
     }
 }
@@ -69,6 +85,8 @@ impl Actor for WsClient {
     /// Method is called on actor start. We start the heartbeat process here.
     fn started(&mut self, ctx: &mut Self::Context) {
         self.heartbeat(ctx);
+
+        ctx.text(serde_json::to_string(&client::message::Message::Id(self.id)).unwrap());
 
         let addr = ctx.address();
         info!("WsClient {} started, trying to connect", self.id);
@@ -119,8 +137,17 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsClient {
                 self.heartbeat = Instant::now();
             }
             Ok(ws::Message::Text(text)) => {
-                info!("Got text {text}");
-                ctx.text(text);
+                if let Ok(msg) = serde_json::from_str::<client::message::Message>(&text) {
+                    info!("Normal msg: {:?}", msg);
+                }
+                if let Ok(msg) = serde_json::from_str::<client::message::PeerMessage>(&text) {
+                    if let Some(peer) = self.peers.get(&msg.peer_id) {
+                        peer.send(moderator::Message::PeerMessage(msg.content))
+                            .into_actor(self)
+                            .then(|_, _, _| fut::ready(()))
+                            .wait(ctx);
+                    }
+                }
             }
             Ok(ws::Message::Binary(bin)) => ctx.binary(bin),
             Ok(ws::Message::Close(reason)) => {
@@ -131,8 +158,3 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsClient {
         }
     }
 }
-
-use uuid::Uuid;
-pub use ws::start;
-
-use super::moderator::{self, Moderator};

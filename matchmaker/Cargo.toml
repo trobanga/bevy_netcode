@@ -19,8 +19,8 @@ anyhow = "1.0.62"
 argon2 = "0.4.1"
 base64 = "0.13.0"
 client = { path = "../client" }
-diesel = { version = "2.0.0-rc.1", features = ["r2d2", "uuid", "postgres"] }
-diesel_migrations = "2.0.0-rc.1"
+diesel = { version = "2.0.0", features = ["r2d2", "uuid", "postgres"] }
+diesel_migrations = "2.0.0"
 dotenv = "0.15.0"
 futures-util = { version = "0.3.23", features = ["sink"] }
 rand = "0.8.5"

@@ -7,9 +7,15 @@ use uuid::Uuid;
 #[derive(Message)]
 #[rtype(result = "()")]
 pub enum Message {
-    NewPeer { id: Uuid },
+    NewPeer { id: Uuid, addr: Recipient<Message> },
+    Peers(HashMap<Uuid, Recipient<Message>>),
     PeerDisconnected { id: Uuid },
+    PeerMessage(client::message::Message),
 }
+
+#[derive(Message)]
+#[rtype(result = "()")]
+pub struct PeerMessage(pub client::message::PeerMessage);
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -47,14 +53,25 @@ impl Handler<Connect> for Moderator {
         if self.clients.contains_key(&msg.id) {
             return Err(Error::AlreadyConnected);
         }
-        self.clients.insert(msg.id, msg.addr);
+
+        let peers = self.clients.clone();
+
+        self.clients.insert(msg.id, msg.addr.clone());
 
         for (id, client) in self.clients.iter() {
             if *id == msg.id {
+                client
+                    .send(Message::Peers(peers.clone()))
+                    .into_actor(self)
+                    .then(|_, _, _| fut::ready(()))
+                    .wait(ctx);
                 continue;
             }
             client
-                .send(Message::NewPeer { id: msg.id })
+                .send(Message::NewPeer {
+                    id: msg.id,
+                    addr: msg.addr.clone(),
+                })
                 .into_actor(self)
                 .then(|_, _, _| fut::ready(()))
                 .wait(ctx);
@@ -66,5 +83,5 @@ impl Handler<Connect> for Moderator {
 impl Handler<Disconnect> for Moderator {
     type Result = ();
 
-    fn handle(&mut self, msg: Disconnect, ctx: &mut Self::Context) -> Self::Result {}
+    fn handle(&mut self, _msg: Disconnect, _ctx: &mut Self::Context) -> Self::Result {}
 }
