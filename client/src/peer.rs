@@ -71,40 +71,8 @@ impl Peer {
             tx,
         };
         peer.ice_candidates().await?;
+        peer.connect_incoming_data_channel().await?;
         Ok(peer)
-    }
-
-    pub async fn handshake_offer(&self) -> anyhow::Result<PeerMessage> {
-        let offer = self.create_offer().await?;
-        Ok(PeerMessage {
-            peer_id: self.peer_id,
-            content: Message::Offer { id: self.id, offer },
-        })
-    }
-
-    pub async fn handshake_accept(
-        &self,
-        offer: RTCSessionDescription,
-    ) -> anyhow::Result<PeerMessage> {
-        self.connection.set_remote_description(offer).await?;
-        let answer = self.connection.create_answer(None).await?;
-        self.connection
-            .set_local_description(answer.clone())
-            .await?;
-        // self.ice_candidates().await?;
-        Ok(PeerMessage {
-            peer_id: self.peer_id,
-            content: Message::Answer {
-                id: self.id,
-                answer,
-            },
-        })
-    }
-
-    pub async fn handle_answer(&self, answer: RTCSessionDescription) -> anyhow::Result<()> {
-        self.connection.set_remote_description(answer).await?;
-        // self.ice_candidates().await?;
-        Ok(())
     }
 
     async fn create_peer_connection(config: &RtcConfig) -> anyhow::Result<Arc<RTCPeerConnection>> {
@@ -224,6 +192,57 @@ impl Peer {
                 Box::pin(async move {})
             }))
             .await;
+        Ok(())
+    }
+
+    async fn connect_incoming_data_channel(&self) -> anyhow::Result<()> {
+        self.connection
+            .on_data_channel(Box::new(move |channel| {
+                Box::pin(async move {
+                    channel.on_open(Box::new(move || Box::pin(async {}))).await;
+                    let d_label = channel.label().to_owned();
+                    channel
+                        .on_message(Box::new(move |msg: DataChannelMessage| {
+                            let msg_str = String::from_utf8(msg.data.to_vec()).unwrap();
+                            info!("Message from DataChannel '{}': '{}'", d_label, msg_str);
+                            Box::pin(async {})
+                        }))
+                        .await;
+                })
+            }))
+            .await;
+
+        Ok(())
+    }
+
+    pub async fn handshake_offer(&self) -> anyhow::Result<PeerMessage> {
+        let offer = self.create_offer().await?;
+        Ok(PeerMessage {
+            peer_id: self.peer_id,
+            content: Message::Offer { id: self.id, offer },
+        })
+    }
+
+    pub async fn handshake_accept(
+        &self,
+        offer: RTCSessionDescription,
+    ) -> anyhow::Result<PeerMessage> {
+        self.connection.set_remote_description(offer).await?;
+        let answer = self.connection.create_answer(None).await?;
+        self.connection
+            .set_local_description(answer.clone())
+            .await?;
+        Ok(PeerMessage {
+            peer_id: self.peer_id,
+            content: Message::Answer {
+                id: self.id,
+                answer,
+            },
+        })
+    }
+
+    pub async fn handle_answer(&self, answer: RTCSessionDescription) -> anyhow::Result<()> {
+        self.connection.set_remote_description(answer).await?;
         Ok(())
     }
 

@@ -41,14 +41,14 @@ impl std::fmt::Debug for Client {
 }
 
 impl Client {
-    pub async fn new<S: Display>(
+    pub async fn new<S: AsRef<str>>(
         address: S,
         port: u16,
         rtc_config: RtcConfig,
         user: &str,
         password: &str,
     ) -> anyhow::Result<Self> {
-        let address = format!("ws://{}:{}/", address, port);
+        let address = format!("ws://{}:{}/", address.as_ref(), port);
         let (_res, mut ws) = Client::connect(&address, user, password).await?;
         let id = if let Some(Ok(ws::Frame::Text(msg))) = ws.next().await {
             let msg: Message = serde_json::from_slice(&msg)?;
