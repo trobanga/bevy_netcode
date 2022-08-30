@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
 
 use getset::Getters;
 use tokio::sync::mpsc;
@@ -15,13 +15,15 @@ use webrtc::{
     ice_transport::ice_server::RTCIceServer,
     interceptor::registry::Registry,
     peer_connection::{
-        configuration::RTCConfiguration, math_rand_alpha,
-        peer_connection_state::RTCPeerConnectionState,
+        configuration::RTCConfiguration, peer_connection_state::RTCPeerConnectionState,
         sdp::session_description::RTCSessionDescription, RTCPeerConnection,
     },
 };
 
-use crate::message::{Message, PeerMessage};
+use crate::{
+    message::{Message, PeerMessage},
+    Packet, Payload,
+};
 
 #[derive(Debug)]
 pub struct RtcConfig {
@@ -44,7 +46,9 @@ pub struct Peer {
     peer_id: Uuid,
     #[getset(get = "pub")]
     connection: Arc<RTCPeerConnection>,
-    tx: mpsc::UnboundedSender<PeerMessage>,
+    ws_tx: mpsc::UnboundedSender<PeerMessage>,
+    outgoing_data_channel: Arc<RTCDataChannel>,
+    incoming_data_tx: mpsc::UnboundedSender<Packet>,
 }
 
 impl std::fmt::Debug for Peer {
@@ -60,15 +64,18 @@ impl Peer {
         id: Uuid,
         peer_id: Uuid,
         config: &RtcConfig,
-        tx: mpsc::UnboundedSender<PeerMessage>,
+        ws_tx: mpsc::UnboundedSender<PeerMessage>,
+        incoming_data_tx: mpsc::UnboundedSender<Packet>,
     ) -> anyhow::Result<Self> {
         let connection = Self::create_peer_connection(config).await?;
-        Self::create_data_channel(&connection).await?;
+        let outgoing_data_channel = Self::create_data_channel(&connection).await?;
         let peer = Self {
             id,
             peer_id,
             connection,
-            tx,
+            ws_tx,
+            outgoing_data_channel,
+            incoming_data_tx,
         };
         peer.ice_candidates().await?;
         peer.connect_incoming_data_channel().await?;
@@ -108,7 +115,7 @@ impl Peer {
     async fn ice_candidates(&self) -> anyhow::Result<()> {
         let id = self.id;
         let peer_id = self.peer_id;
-        let tx = self.tx.clone();
+        let tx = self.ws_tx.clone();
         self.connection
             .on_ice_candidate(Box::new(move |c| {
                 let tx2 = tx.clone();
@@ -128,7 +135,9 @@ impl Peer {
         Ok(())
     }
 
-    async fn create_data_channel(connection: &RTCPeerConnection) -> anyhow::Result<()> {
+    async fn create_data_channel(
+        connection: &RTCPeerConnection,
+    ) -> anyhow::Result<Arc<RTCDataChannel>> {
         let config = RTCDataChannelInit {
             ordered: Some(false),
             max_retransmits: Some(0),
@@ -142,23 +151,7 @@ impl Peer {
         data_channel.on_open(Box::new(move || {
         info!("Data channel '{}'-'{}' open. Random messages will now be sent to any connected DataChannels every 5 seconds", d1.label(), d1.id());
 
-        let d2 = Arc::clone(&d1);
-        Box::pin(async move {
-            let mut result = anyhow::Result::<usize>::Ok(0);
-            while result.is_ok() {
-                let timeout = tokio::time::sleep(Duration::from_secs(5));
-                tokio::pin!(timeout);
-
-                tokio::select! {
-                    _ = timeout.as_mut() =>{
-                        let message = math_rand_alpha(15);
-                        info!("Sending '{}'", message);
-                        result = d2.send_text(message).await.map_err(Into::into);
-                    }
-                };
-            }
-        })
-        })).await;
+        Box::pin(async move {})})).await;
 
         // Register text message handling
         let d_label = data_channel.label().to_owned();
@@ -172,7 +165,6 @@ impl Peer {
 
         data_channel
             .on_close(Box::new(move || {
-                // TODO: handle this somehow
                 debug!("Data channel closed");
                 Box::pin(async move {})
             }))
@@ -180,7 +172,6 @@ impl Peer {
 
         data_channel
             .on_error(Box::new(move |e| {
-                // TODO: handle this somehow
                 warn!("Data channel error {:?}", e);
                 Box::pin(async move {})
             }))
@@ -188,23 +179,26 @@ impl Peer {
 
         data_channel
             .on_buffered_amount_low(Box::new(move || {
-                info!("************* Buffered amound low");
+                info!("Buffered amound low");
                 Box::pin(async move {})
             }))
             .await;
-        Ok(())
+        Ok(data_channel)
     }
 
     async fn connect_incoming_data_channel(&self) -> anyhow::Result<()> {
+        let tx = self.incoming_data_tx.clone();
+        let id = self.peer_id;
         self.connection
             .on_data_channel(Box::new(move |channel| {
+                let tx2 = tx.clone();
                 Box::pin(async move {
                     channel.on_open(Box::new(move || Box::pin(async {}))).await;
-                    let d_label = channel.label().to_owned();
                     channel
                         .on_message(Box::new(move |msg: DataChannelMessage| {
-                            let msg_str = String::from_utf8(msg.data.to_vec()).unwrap();
-                            info!("Message from DataChannel '{}': '{}'", d_label, msg_str);
+                            let payload: Payload = msg.data.into();
+                            let packet = Packet { id, payload };
+                            let _ = tx2.send(packet);
                             Box::pin(async {})
                         }))
                         .await;
@@ -255,5 +249,11 @@ impl Peer {
             .local_description()
             .await
             .ok_or_else(|| anyhow::anyhow!("generate local_description failed!"))?)
+    }
+
+    pub async fn send(&self, payload: Payload) -> anyhow::Result<()> {
+        let msg = bytes::Bytes::from(payload);
+        self.outgoing_data_channel.send(&msg).await?;
+        Ok(())
     }
 }

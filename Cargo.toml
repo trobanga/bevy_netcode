@@ -1,5 +1,5 @@
 [workspace]
 members = [
     "matchmaker",
-    "client",
+    "webrtc_socket",
 ]

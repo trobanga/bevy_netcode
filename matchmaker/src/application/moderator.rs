@@ -10,12 +10,12 @@ pub enum Message {
     NewPeer { id: Uuid, addr: Recipient<Message> },
     Peers(HashMap<Uuid, Recipient<Message>>),
     PeerDisconnected { id: Uuid },
-    PeerMessage(client::message::Message),
+    PeerMessage(webrtc_socket::message::Message),
 }
 
 #[derive(Message)]
 #[rtype(result = "()")]
-pub struct PeerMessage(pub client::message::PeerMessage);
+pub struct PeerMessage(pub webrtc_socket::message::PeerMessage);
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {

@@ -95,7 +95,7 @@ async fn correct_auth_are_redirected() -> anyhow::Result<()> {
     let mut app = TestAppBuilder::new().build();
     app.spawn_app().await;
     let address = format!("ws://{}:{}/", app.address, app.port);
-    let (res, _ws) = client::Client::connect(&address, "Alice", "I like Bob").await?;
+    let (res, _ws) = webrtc_socket::WebRTCSocket::connect(&address, "Alice", "I like Bob").await?;
 
     assert_eq!(res.status(), 101);
     Ok(())

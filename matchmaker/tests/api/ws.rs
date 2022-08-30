@@ -1,27 +1,29 @@
 use crate::helper::{enable_tracing, TestAppBuilder, TestUser};
-use client::peer::RtcConfig;
 use futures_util::{SinkExt as _, StreamExt as _};
 use matchmaker::db::actions::display_users;
 use tokio::time::{sleep, Duration};
 use tracing::info;
+use webrtc_socket::{peer::RtcConfig, WebRTCSocket};
 
 #[actix_web::test]
 async fn client_ping_pong() -> anyhow::Result<()> {
     let mut app = TestAppBuilder::new().build();
     app.spawn_app().await;
     let address = format!("ws://{}:{}/", app.address, app.port);
-    let (_res, mut ws) = client::Client::connect(&address, "Alice", "I like Bob").await?;
+    let (_res, mut ws) = WebRTCSocket::connect(&address, "Alice", "I like Bob").await?;
 
     let mut got_pong = false;
-    ws.send(client::ws::Message::Ping(actix_web::web::Bytes::new()))
-        .await
-        .unwrap();
+    ws.send(webrtc_socket::ws::Message::Ping(
+        actix_web::web::Bytes::new(),
+    ))
+    .await
+    .unwrap();
 
     let _ = ws.next().await; // ignore first message with Id
 
     if let Some(msg) = ws.next().await {
         match msg {
-            Ok(client::ws::Frame::Pong(_)) => {
+            Ok(webrtc_socket::ws::Frame::Pong(_)) => {
                 got_pong = true;
             }
             _ => {}
@@ -51,8 +53,7 @@ async fn ws() {
 
     tokio::task::spawn_local(async move {
         let mut alice =
-            client::Client::new(aaddress, aport, RtcConfig::default(), "Alice", "I like Bob")
-                .await?;
+            WebRTCSocket::new(aaddress, aport, RtcConfig::default(), "Alice", "I like Bob").await?;
         alice.run().await
     });
 
@@ -60,7 +61,7 @@ async fn ws() {
     let baddress = app.address.clone();
     let bport = app.port;
     let _bob = tokio::task::spawn_local(async move {
-        let mut bob = client::Client::new(
+        let mut bob = WebRTCSocket::new(
             baddress,
             bport,
             RtcConfig::default(),
@@ -77,7 +78,7 @@ async fn ws() {
     // let cport = app.port;
     // sleep(Duration::from_millis(100)).await;
     // tokio::task::spawn_local(async move {
-    //     let mut charlie = client::Client::new(
+    //     let mut charlie = webrtc_socket::webrtc_socket::new(
     //         caddress,
     //         cport,
     //         RtcConfig::default(),

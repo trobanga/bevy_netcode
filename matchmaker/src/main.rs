@@ -20,7 +20,7 @@ async fn main() -> anyhow::Result<()> {
     let settings = Settings {
         application: ApplicationSettings {
             host: "127.0.0.1".to_string(),
-            port: 3648,
+            port: 0,
         },
     };
     matchmaker::application::Application::build(settings, create_pool(database_url_from_env()))

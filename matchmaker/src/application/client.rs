@@ -65,7 +65,7 @@ impl Handler<moderator::Message> for WsClient {
             moderator::Message::NewPeer { id, addr } => {
                 info!("Tell client to connect to {id}");
                 self.peers.insert(id, addr);
-                let msg = client::message::Message::NewPeer { id };
+                let msg = webrtc_socket::message::Message::NewPeer { id };
                 ctx.text(serde_json::to_string(&msg).unwrap());
                 info!("Ok, told her");
             }
@@ -86,7 +86,7 @@ impl Actor for WsClient {
     fn started(&mut self, ctx: &mut Self::Context) {
         self.heartbeat(ctx);
 
-        ctx.text(serde_json::to_string(&client::message::Message::Id(self.id)).unwrap());
+        ctx.text(serde_json::to_string(&webrtc_socket::message::Message::Id(self.id)).unwrap());
 
         let addr = ctx.address();
         info!("WsClient {} started, trying to connect", self.id);
@@ -137,10 +137,11 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsClient {
                 self.heartbeat = Instant::now();
             }
             Ok(ws::Message::Text(text)) => {
-                if let Ok(msg) = serde_json::from_str::<client::message::Message>(&text) {
+                if let Ok(msg) = serde_json::from_str::<webrtc_socket::message::Message>(&text) {
                     info!("Normal msg: {:?}", msg);
                 }
-                if let Ok(msg) = serde_json::from_str::<client::message::PeerMessage>(&text) {
+                if let Ok(msg) = serde_json::from_str::<webrtc_socket::message::PeerMessage>(&text)
+                {
                     if let Some(peer) = self.peers.get(&msg.peer_id) {
                         peer.send(moderator::Message::PeerMessage(msg.content))
                             .into_actor(self)

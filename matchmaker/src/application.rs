@@ -1,9 +1,14 @@
 use actix::*;
-use actix_web::{dev::Server, get, web, App, Error, HttpRequest, HttpResponse, HttpServer};
+use actix_web::{dev::Server, get, post, web, App, Error, HttpRequest, HttpResponse, HttpServer};
+use secrecy::Secret;
 use std::net::TcpListener;
 use tracing::info;
 
-use crate::{authentication::basic_authentication, db::DbPool, settings::Settings};
+use crate::{
+    authentication::basic_authentication,
+    db::{actions::create_user, DbPool},
+    settings::Settings,
+};
 
 use self::moderator::Moderator;
 
@@ -71,4 +76,13 @@ async fn index(
     let id = basic_authentication(req.headers(), &mut conn).await?;
     let websocket = client::WsClient::new(id, moderator.get_ref().clone());
     client::start(websocket, &req, stream)
+}
+
+#[post("/add_user/{username}/{pwd}")]
+async fn add_user(req: HttpRequest, pool: web::Data<DbPool>) -> Result<HttpResponse, Error> {
+    let mut conn = pool.get().expect("Could not get DbConnection");
+    let username: String = req.match_info().get("username").unwrap().parse().unwrap();
+    let pwd: Secret<String> = Secret::new(req.match_info().get("pwd").unwrap().parse().unwrap());
+    create_user(&username, pwd, &mut conn)?;
+    Ok(HttpResponse::Ok().await?)
 }
