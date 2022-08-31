@@ -5,7 +5,7 @@ use secrecy::{ExposeSecret, Secret};
 use tracing::info;
 use uuid::Uuid;
 
-use crate::authentication::{compute_password_hash, AuthError};
+use crate::authentication::compute_password_hash;
 
 use super::models;
 use super::schema;
@@ -15,9 +15,6 @@ use super::DbConnection;
 pub enum Error {
     #[error("Username is already taken")]
     UsernameIsTaken,
-
-    #[error("{0}")]
-    Auth(#[from] AuthError),
 
     #[error("{0}")]
     Db(#[from] diesel::result::Error),
@@ -57,15 +54,11 @@ pub fn create_user(
     }
 }
 
-pub fn find_user_by_name(
-    username: &str,
-    conn: &mut DbConnection,
-) -> Result<Option<models::User>, anyhow::Error> {
+pub fn find_user_by_name(username: &str, conn: &mut DbConnection) -> Result<models::User, Error> {
     use schema::users::dsl::*;
     let user = users
         .filter(name.eq(username.to_string()))
-        .first::<models::User>(conn)
-        .optional()?;
+        .first::<models::User>(conn)?;
 
     Ok(user)
 }

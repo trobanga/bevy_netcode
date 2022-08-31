@@ -1,19 +1,16 @@
 use actix::*;
-use actix_web::{dev::Server, get, post, web, App, Error, HttpRequest, HttpResponse, HttpServer};
-use secrecy::Secret;
+use actix_web::{dev::Server, web, App, HttpServer};
 use std::net::TcpListener;
 use tracing::info;
 
-use crate::{
-    authentication::basic_authentication,
-    db::{actions::create_user, DbPool},
-    settings::Settings,
-};
+use crate::{db::DbPool, settings::Settings};
 
 use self::moderator::Moderator;
 
 mod client;
 mod moderator;
+mod services;
+use services::{add_user, health_check, index, user};
 
 pub struct Application {
     port: u16,
@@ -55,34 +52,9 @@ pub fn create_server_with_pool(
             .app_data(moderator.clone())
             .service(health_check)
             .service(index)
+            .service(add_user)
+            .service(user)
     })
     .listen(listener)?
     .run())
-}
-
-#[get("/health_check")]
-async fn health_check() -> HttpResponse {
-    HttpResponse::Ok().finish()
-}
-
-#[get("/")]
-async fn index(
-    req: HttpRequest,
-    stream: web::Payload,
-    pool: web::Data<DbPool>,
-    moderator: web::Data<Addr<Moderator>>,
-) -> Result<HttpResponse, Error> {
-    let mut conn = pool.get().expect("Could not get DbConnection");
-    let id = basic_authentication(req.headers(), &mut conn).await?;
-    let websocket = client::WsClient::new(id, moderator.get_ref().clone());
-    client::start(websocket, &req, stream)
-}
-
-#[post("/add_user/{username}/{pwd}")]
-async fn add_user(req: HttpRequest, pool: web::Data<DbPool>) -> Result<HttpResponse, Error> {
-    let mut conn = pool.get().expect("Could not get DbConnection");
-    let username: String = req.match_info().get("username").unwrap().parse().unwrap();
-    let pwd: Secret<String> = Secret::new(req.match_info().get("pwd").unwrap().parse().unwrap());
-    create_user(&username, pwd, &mut conn)?;
-    Ok(HttpResponse::Ok().await?)
 }

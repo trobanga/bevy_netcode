@@ -4,7 +4,7 @@ use crate::helper::TestAppBuilder;
 async fn health_check() {
     let mut app = TestAppBuilder::new().build();
     app.spawn_app().await;
-    let path = app.path("health_check");
+    let path = app.generate_path("health_check");
     let response = reqwest::Client::new()
         .get(&path)
         .send()

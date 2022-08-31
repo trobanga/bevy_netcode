@@ -66,7 +66,7 @@ impl TestApp {
         format!("http://{}:{}", &self.address, self.port)
     }
 
-    pub fn path(&self, path: &str) -> String {
+    pub fn generate_path(&self, path: &str) -> String {
         format!("{}/{}", &self.base_address(), path)
     }
 
@@ -85,6 +85,11 @@ impl TestAppBuilder {
         Self::default()
     }
 
+    pub fn with_default_user_alice(mut self) -> Self {
+        self.users.push(TestUser::default());
+        self
+    }
+
     pub fn users(mut self, users: Vec<TestUser>) -> Self {
         self.users = users;
         self
@@ -93,15 +98,10 @@ impl TestAppBuilder {
     pub fn build(self) -> TestApp {
         let mut app = TestApp::new();
 
-        let users = if self.users.len() == 0 {
-            vec![TestUser::default()]
-        } else {
-            self.users
-        };
-        for user in &users {
+        for user in &self.users {
             user.store(&app.db_pool);
         }
-        app.set_users(users);
+        app.set_users(self.users);
         app
     }
 }

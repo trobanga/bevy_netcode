@@ -18,7 +18,7 @@ async fn password_hashed() {
     let user = TestUser::default();
     user.store(&pool);
 
-    let user = find_user_by_name("Alice", &mut conn).unwrap().unwrap();
+    let user = find_user_by_name("Alice", &mut conn).unwrap();
 
     assert_ne!(user.password, "I like Bob");
 }
@@ -57,7 +57,7 @@ async fn missing_auth_are_rejected_with_reqwest() -> anyhow::Result<()> {
 
 #[actix_web::test]
 async fn wrong_auth_are_rejected_with_reqwest() -> anyhow::Result<()> {
-    let mut app = TestAppBuilder::new().build();
+    let mut app = TestAppBuilder::new().with_default_user_alice().build();
     app.spawn_app().await;
     let address = format!("http://{}:{}/", &app.address, app.port);
     let response = reqwest::Client::new()
@@ -78,7 +78,7 @@ async fn wrong_auth_are_rejected_with_reqwest() -> anyhow::Result<()> {
 
 #[actix_web::test]
 async fn right_auth_pass_with_reqwest_yield_bad_request() -> anyhow::Result<()> {
-    let mut app = TestAppBuilder::new().build();
+    let mut app = TestAppBuilder::new().with_default_user_alice().build();
     app.spawn_app().await;
     let address = format!("http://{}:{}/", &app.address, app.port);
     let response = reqwest::Client::new()
@@ -92,7 +92,7 @@ async fn right_auth_pass_with_reqwest_yield_bad_request() -> anyhow::Result<()> 
 
 #[actix_web::test]
 async fn correct_auth_are_redirected() -> anyhow::Result<()> {
-    let mut app = TestAppBuilder::new().build();
+    let mut app = TestAppBuilder::new().with_default_user_alice().build();
     app.spawn_app().await;
     let address = format!("ws://{}:{}/", app.address, app.port);
     let (res, _ws) = webrtc_socket::WebRTCSocket::connect(&address, "Alice", "I like Bob").await?;

@@ -7,7 +7,7 @@ use webrtc_socket::{peer::RtcConfig, WebRTCSocket};
 
 #[actix_web::test]
 async fn client_ping_pong() -> anyhow::Result<()> {
-    let mut app = TestAppBuilder::new().build();
+    let mut app = TestAppBuilder::new().with_default_user_alice().build();
     app.spawn_app().await;
     let address = format!("ws://{}:{}/", app.address, app.port);
     let (_res, mut ws) = WebRTCSocket::connect(&address, "Alice", "I like Bob").await?;

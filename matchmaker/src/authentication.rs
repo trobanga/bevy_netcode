@@ -1,8 +1,4 @@
-use actix_web::http::{
-    header::{self, HeaderMap, HeaderValue},
-    StatusCode,
-};
-use actix_web::{HttpResponse, ResponseError};
+use actix_web::http::header::HeaderMap;
 use anyhow::Context;
 use argon2::password_hash::SaltString;
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
@@ -12,6 +8,9 @@ use crate::{
     db::{self, DbConnection},
     spawn_blocking_with_tracing,
 };
+
+mod error;
+pub use error::Error as AuthError;
 
 pub async fn basic_authentication(
     headers: &HeaderMap,
@@ -56,40 +55,6 @@ pub async fn basic_authentication(
     validate_credentials(credentials, conn).await
 }
 
-#[derive(thiserror::Error, Debug)]
-pub enum AuthError {
-    #[error("Invalid credentials.")]
-    InvalidCredentials(#[source] anyhow::Error),
-
-    #[error("Failed parse PasswordHash")]
-    FailedToParsePasswordHash,
-
-    #[error("Failed hash password")]
-    FailedToHashPassword,
-
-    #[error("Unknown user")]
-    UnknownUser,
-
-    #[error(transparent)]
-    UnexpectedError(#[from] anyhow::Error),
-}
-
-impl ResponseError for AuthError {
-    fn error_response(&self) -> HttpResponse {
-        match self {
-            AuthError::UnexpectedError(_) => HttpResponse::new(StatusCode::INTERNAL_SERVER_ERROR),
-            _ => {
-                let mut response = HttpResponse::new(StatusCode::UNAUTHORIZED);
-                let header_value = HeaderValue::from_str(r#"Basic realm="login""#).unwrap();
-                response
-                    .headers_mut()
-                    .insert(header::WWW_AUTHENTICATE, header_value);
-                response
-            }
-        }
-    }
-}
-
 #[derive(Debug)]
 pub struct Credentials {
     pub username: String,
@@ -123,11 +88,7 @@ async fn get_stored_credentials(
     conn: &mut DbConnection,
 ) -> Result<(uuid::Uuid, Secret<String>), AuthError> {
     let user = db::actions::find_user_by_name(username, conn)?;
-    if let Some(user) = user {
-        Ok((user.uuid, Secret::new(user.password)))
-    } else {
-        Err(AuthError::UnknownUser)
-    }
+    Ok((user.uuid, Secret::new(user.password)))
 }
 
 #[tracing::instrument(
@@ -162,11 +123,11 @@ pub async fn change_password(
     Ok(())
 }
 
-pub fn compute_password_hash(password: Secret<String>) -> Result<Secret<String>, AuthError> {
+pub fn compute_password_hash(password: Secret<String>) -> Result<Secret<String>, anyhow::Error> {
     let salt = SaltString::generate(&mut rand::thread_rng());
     let password_hash = Argon2::default()
         .hash_password(password.expose_secret().as_bytes(), &salt)
-        .map_err(|_| AuthError::FailedToHashPassword)?
+        .map_err(|e| anyhow::anyhow!(e.to_string()))?
         .to_string();
     Ok(Secret::new(password_hash))
 }
