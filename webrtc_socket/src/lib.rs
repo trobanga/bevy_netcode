@@ -31,9 +31,6 @@ pub struct Packet {
 
 pub struct WebRTCSocket {
     id: Uuid,
-    #[allow(dead_code)]
-    user: String,
-    address: String,
     rtc_config: RtcConfig,
     peers: HashMap<Uuid, Peer>,
     ws: actix_codec::Framed<BoxedSocket, Codec>,
@@ -47,7 +44,6 @@ impl std::fmt::Debug for WebRTCSocket {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Client")
             .field("id", &self.id)
-            .field("address", &self.address)
             .field("rtc_config", &self.rtc_config)
             .field("peers", &self.peers)
             .finish()
@@ -55,15 +51,9 @@ impl std::fmt::Debug for WebRTCSocket {
 }
 
 impl WebRTCSocket {
-    pub async fn new<S: AsRef<str>>(
-        address: S,
-        port: u16,
-        rtc_config: RtcConfig,
-        user: &str,
-        password: &str,
-    ) -> anyhow::Result<Self> {
-        let address = format!("ws://{}:{}/", address.as_ref(), port);
-        let (_res, mut ws) = WebRTCSocket::connect(&address, user, password).await?;
+    pub async fn new(rtc_config: RtcConfig) -> anyhow::Result<Self> {
+        let mut rtc_config = rtc_config;
+        let (_res, mut ws) = WebRTCSocket::connect(&mut rtc_config).await?;
         let id = if let Some(Ok(ws::Frame::Text(msg))) = ws.next().await {
             let msg: Message = serde_json::from_slice(&msg)?;
             if let Message::Id(id) = msg {
@@ -78,8 +68,6 @@ impl WebRTCSocket {
         let (out_data_tx, out_data_rx) = mpsc::unbounded_channel::<Packet>();
         Ok(Self {
             id,
-            user: user.to_string(),
-            address,
             rtc_config,
             peers: Default::default(),
             ws,
@@ -90,14 +78,17 @@ impl WebRTCSocket {
         })
     }
 
+    fn user(&self) -> &str {
+        &self.rtc_config.user
+    }
+
     pub async fn connect(
-        address: &str,
-        user: &str,
-        password: &str,
+        rtc_config: &mut RtcConfig,
     ) -> Result<(ClientResponse, actix_codec::Framed<BoxedSocket, Codec>), anyhow::Error> {
+        let password = rtc_config.take_password();
         awc::Client::new()
-            .ws(address)
-            .basic_auth(user, Some(password))
+            .ws(rtc_config.login_url())
+            .basic_auth(&rtc_config.user, password.as_deref())
             .connect()
             .await
             .map_err(|e| anyhow::anyhow!("Client error: {}", e))
@@ -177,7 +168,7 @@ impl WebRTCSocket {
         offer: RTCSessionDescription,
         tx: mpsc::UnboundedSender<PeerMessage>,
     ) -> anyhow::Result<()> {
-        info!("I {}, got offer! {id} {:?}", self.user, offer);
+        info!("I {}, got offer! {id} {:?}", self.user(), offer);
         let peer = self.peers.entry(id).or_insert(
             Peer::new(self.id, id, &self.rtc_config, tx, self.in_data_tx.clone()).await?,
         );
@@ -192,7 +183,7 @@ impl WebRTCSocket {
         id: Uuid,
         answer: RTCSessionDescription,
     ) -> anyhow::Result<()> {
-        info!("I {}, got answer {id} {answer:?}", self.user);
+        info!("I {}, got answer {id} {answer:?}", self.user());
         if let Some(peer) = self.peers.get(&id) {
             peer.handle_answer(answer).await?;
         }

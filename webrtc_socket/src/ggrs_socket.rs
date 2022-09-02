@@ -1,7 +1,7 @@
 use ggrs::{Message, PlayerType};
 use uuid::Uuid;
 
-use crate::{WebRTCSocket, Packet};
+use crate::{Packet, WebRTCSocket};
 
 impl WebRTCSocket {
     #[must_use]

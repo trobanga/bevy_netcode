@@ -12,7 +12,6 @@ use webrtc::{
         data_channel_init::RTCDataChannelInit, data_channel_message::DataChannelMessage,
         RTCDataChannel,
     },
-    ice_transport::ice_server::RTCIceServer,
     interceptor::registry::Registry,
     peer_connection::{
         configuration::RTCConfiguration, peer_connection_state::RTCPeerConnectionState,
@@ -25,20 +24,8 @@ use crate::{
     Packet, Payload,
 };
 
-#[derive(Debug)]
-pub struct RtcConfig {
-    ice_servers: Vec<RTCIceServer>,
-}
-
-impl Default for RtcConfig {
-    fn default() -> Self {
-        let ice_servers = vec![RTCIceServer {
-            urls: vec!["stun:stun.stunprotocol.org:3478".to_owned()],
-            ..Default::default()
-        }];
-        Self { ice_servers }
-    }
-}
+mod rtc_config;
+pub use rtc_config::{RtcConfig, RtcConfigBuilder};
 
 #[derive(Getters)]
 pub struct Peer {
@@ -196,7 +183,7 @@ impl Peer {
                     channel.on_open(Box::new(move || Box::pin(async {}))).await;
                     channel
                         .on_message(Box::new(move |msg: DataChannelMessage| {
-                            let payload: Payload = msg.data.into();
+                            let payload: Payload = msg.data;
                             let packet = Packet { id, payload };
                             let _ = tx2.send(packet);
                             Box::pin(async {})
@@ -244,16 +231,14 @@ impl Peer {
         let offer = self.connection.create_offer(None).await?;
         self.connection.set_local_description(offer).await?;
 
-        Ok(self
-            .connection
+        self.connection
             .local_description()
             .await
-            .ok_or_else(|| anyhow::anyhow!("generate local_description failed!"))?)
+            .ok_or_else(|| anyhow::anyhow!("generate local_description failed!"))
     }
 
     pub async fn send(&self, payload: Payload) -> anyhow::Result<()> {
-        let msg = bytes::Bytes::from(payload);
-        self.outgoing_data_channel.send(&msg).await?;
+        self.outgoing_data_channel.send(&payload).await?;
         Ok(())
     }
 }

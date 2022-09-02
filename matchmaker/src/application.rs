@@ -3,14 +3,14 @@ use actix_web::{dev::Server, web, App, HttpServer};
 use std::net::TcpListener;
 use tracing::info;
 
-use crate::{db::DbPool, settings::Settings};
-
-use self::moderator::Moderator;
+use crate::{db::DbPool, middleware::Authentication, settings::Settings};
 
 mod client;
 mod moderator;
 mod services;
-use services::{add_user, health_check, index, user};
+
+use moderator::Moderator;
+use services::{health_check, login, show, useradd, userdel, users};
 
 pub struct Application {
     port: u16,
@@ -51,9 +51,14 @@ pub fn create_server_with_pool(
             .app_data(pool.clone())
             .app_data(moderator.clone())
             .service(health_check)
-            .service(index)
-            .service(add_user)
-            .service(user)
+            .service(web::scope("/ws").service(login).wrap(Authentication))
+            .service(
+                web::scope("/user")
+                    .service(useradd)
+                    .service(userdel)
+                    .service(show),
+            )
+            .service(users)
     })
     .listen(listener)?
     .run())

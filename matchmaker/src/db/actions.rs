@@ -1,6 +1,6 @@
 use actix_web::{http::StatusCode, HttpResponse, ResponseError};
 use diesel::dsl::{exists, select};
-use diesel::prelude::*;
+use diesel::{prelude::*, r2d2};
 use secrecy::{ExposeSecret, Secret};
 use tracing::info;
 use uuid::Uuid;
@@ -17,7 +17,10 @@ pub enum Error {
     UsernameIsTaken,
 
     #[error("{0}")]
-    Db(#[from] diesel::result::Error),
+    Diesel(#[from] diesel::result::Error),
+
+    #[error("0")]
+    R2d2(#[from] r2d2::Error),
 
     #[error(transparent)]
     UnexpectedError(#[from] anyhow::Error),
@@ -54,6 +57,12 @@ pub fn create_user(
     }
 }
 
+pub fn delete_user(username: &str, conn: &mut DbConnection) -> Result<(), Error> {
+    use schema::users::dsl::*;
+    diesel::delete(users.filter(name.eq(username))).execute(conn)?;
+    Ok(())
+}
+
 pub fn find_user_by_name(username: &str, conn: &mut DbConnection) -> Result<models::User, Error> {
     use schema::users::dsl::*;
     let user = users
@@ -61,6 +70,11 @@ pub fn find_user_by_name(username: &str, conn: &mut DbConnection) -> Result<mode
         .first::<models::User>(conn)?;
 
     Ok(user)
+}
+
+pub fn user_id_by_name(username: &str, conn: &mut DbConnection) -> Result<Uuid, Error> {
+    let user = find_user_by_name(username, conn)?;
+    Ok(user.uuid)
 }
 
 pub fn set_password_for_user(
@@ -83,4 +97,9 @@ pub fn display_users(conn: &mut DbConnection) -> Result<(), anyhow::Error> {
     }
 
     Ok(())
+}
+
+pub fn list_users(conn: &mut DbConnection) -> Result<Vec<models::User>, Error> {
+    use schema::users::dsl::*;
+    Ok(users.load::<models::User>(conn)?)
 }

@@ -6,6 +6,7 @@ use actix_web::rt::task::JoinHandle;
 pub mod application;
 pub mod authentication;
 pub mod db;
+mod middleware;
 pub mod settings;
 
 pub fn spawn_blocking_with_tracing<F, R>(f: F) -> JoinHandle<R>

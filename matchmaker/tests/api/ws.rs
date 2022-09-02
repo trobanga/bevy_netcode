@@ -3,14 +3,19 @@ use futures_util::{SinkExt as _, StreamExt as _};
 use matchmaker::db::actions::display_users;
 use tokio::time::{sleep, Duration};
 use tracing::info;
-use webrtc_socket::{peer::RtcConfig, WebRTCSocket};
+use webrtc_socket::{peer::RtcConfigBuilder, WebRTCSocket};
 
 #[actix_web::test]
 async fn client_ping_pong() -> anyhow::Result<()> {
     let mut app = TestAppBuilder::new().with_default_user_alice().build();
     app.spawn_app().await;
-    let address = format!("ws://{}:{}/", app.address, app.port);
-    let (_res, mut ws) = WebRTCSocket::connect(&address, "Alice", "I like Bob").await?;
+    let mut rtc_config = RtcConfigBuilder::new()
+        .address(app.address)
+        .port(app.port)
+        .user("Alice")
+        .password("I like Bob")
+        .build();
+    let (_res, mut ws) = WebRTCSocket::connect(&mut rtc_config).await?;
 
     let mut got_pong = false;
     ws.send(webrtc_socket::ws::Message::Ping(
@@ -48,27 +53,26 @@ async fn ws() {
     info!("Users:");
     display_users(&mut conn).unwrap();
 
-    let aaddress = app.address.clone();
-    let aport = app.port;
-
+    let rtc_config = RtcConfigBuilder::new()
+        .address(app.address.clone())
+        .port(app.port)
+        .user("Alice")
+        .password("I like Bob")
+        .build();
     tokio::task::spawn_local(async move {
-        let mut alice =
-            WebRTCSocket::new(aaddress, aport, RtcConfig::default(), "Alice", "I like Bob").await?;
+        let mut alice = WebRTCSocket::new(rtc_config).await?;
         alice.run().await
     });
 
     sleep(Duration::from_millis(100)).await;
-    let baddress = app.address.clone();
-    let bport = app.port;
+    let rtc_config = RtcConfigBuilder::new()
+        .address(app.address)
+        .port(app.port)
+        .user("Bob")
+        .password("I fancy Alice")
+        .build();
     let _bob = tokio::task::spawn_local(async move {
-        let mut bob = WebRTCSocket::new(
-            baddress,
-            bport,
-            RtcConfig::default(),
-            "Bob",
-            "I fancy Alice",
-        )
-        .await?;
+        let mut bob = WebRTCSocket::new(rtc_config).await?;
         bob.run().await
     });
 

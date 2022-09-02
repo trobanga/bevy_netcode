@@ -7,6 +7,7 @@ use matchmaker::{
     db::{self, actions::find_user_by_name},
 };
 use secrecy::Secret;
+use webrtc_socket::peer::RtcConfigBuilder;
 #[actix_web::test]
 async fn password_hashed() {
     enable_tracing();
@@ -49,7 +50,7 @@ async fn password_verification() {
 async fn missing_auth_are_rejected_with_reqwest() -> anyhow::Result<()> {
     let mut app = TestAppBuilder::new().build();
     app.spawn_app().await;
-    let address = format!("http://{}:{}/", &app.address, app.port);
+    let address = format!("http://{}:{}/ws/login", &app.address, app.port);
     let response = reqwest::Client::new().get(&address).send().await?;
     assert_eq!(response.status(), 401);
     Ok(())
@@ -59,7 +60,7 @@ async fn missing_auth_are_rejected_with_reqwest() -> anyhow::Result<()> {
 async fn wrong_auth_are_rejected_with_reqwest() -> anyhow::Result<()> {
     let mut app = TestAppBuilder::new().with_default_user_alice().build();
     app.spawn_app().await;
-    let address = format!("http://{}:{}/", &app.address, app.port);
+    let address = format!("http://{}:{}/ws/login", &app.address, app.port);
     let response = reqwest::Client::new()
         .get(&address)
         .basic_auth("Alice", Some("I don't like Bob"))
@@ -77,25 +78,16 @@ async fn wrong_auth_are_rejected_with_reqwest() -> anyhow::Result<()> {
 }
 
 #[actix_web::test]
-async fn right_auth_pass_with_reqwest_yield_bad_request() -> anyhow::Result<()> {
-    let mut app = TestAppBuilder::new().with_default_user_alice().build();
-    app.spawn_app().await;
-    let address = format!("http://{}:{}/", &app.address, app.port);
-    let response = reqwest::Client::new()
-        .get(&address)
-        .basic_auth("Alice", Some("I like Bob"))
-        .send()
-        .await?;
-    assert_eq!(response.status(), 400);
-    Ok(())
-}
-
-#[actix_web::test]
 async fn correct_auth_are_redirected() -> anyhow::Result<()> {
     let mut app = TestAppBuilder::new().with_default_user_alice().build();
     app.spawn_app().await;
-    let address = format!("ws://{}:{}/", app.address, app.port);
-    let (res, _ws) = webrtc_socket::WebRTCSocket::connect(&address, "Alice", "I like Bob").await?;
+    let mut rtc_config = RtcConfigBuilder::new()
+        .address(app.address)
+        .port(app.port)
+        .user("Alice")
+        .password("I like Bob")
+        .build();
+    let (res, _ws) = webrtc_socket::WebRTCSocket::connect(&mut rtc_config).await?;
 
     assert_eq!(res.status(), 101);
     Ok(())
