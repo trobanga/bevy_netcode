@@ -10,7 +10,7 @@ use tokio::{
     select,
     sync::mpsc::{self, UnboundedReceiver, UnboundedSender},
 };
-use tracing::{debug, error, info};
+use tracing::{debug, error, trace};
 use uuid::Uuid;
 use webrtc::{
     ice_transport::ice_candidate::RTCIceCandidateInit,
@@ -27,6 +27,7 @@ pub mod peer;
 pub use ggrs_socket::GgrsSocket;
 
 pub type Payload = bytes::Bytes;
+
 pub struct Packet {
     id: Uuid,
     payload: Payload,
@@ -103,17 +104,17 @@ impl WebRTCSocket {
     }
 
     pub async fn run(&mut self) -> Result<(), anyhow::Error> {
-        info!("WebRTC run() started");
+        debug!("WebRTC run() started");
 
         let (ws_tx, mut ws_rx) = mpsc::unbounded_channel::<PeerMessage>();
         loop {
             select! {
                 Some(msg) = ws_rx.recv() => {
-                    info!(?msg);
+                    trace!(?msg);
                     self.send_text(serde_json::to_string(&msg).unwrap()).await?;
                 }
                 Some(Ok(msg)) = self.ws.next() => {
-                    info!(?msg);
+                    trace!(?msg);
                     match msg {
                         ws::Frame::Text(msg) => {
                             let msg: Message = serde_json::from_slice(&msg)?;
@@ -141,14 +142,13 @@ impl WebRTCSocket {
                 }
                 Some(packet) = self.out_data_rx.recv() => {
                     if let Some(peer) = self.peers.get(&packet.id) {
-                        info!("Send packet to peer {}", packet.id);
+                        trace!("Send packet with {} bytes to peer {}", packet.payload.len(), packet.id);
                         peer.send(packet.payload).await?;
                     }
                 }
                 Some(msg) = self.state_rx.recv() => {
                     match msg {
                         StateMessage::ReadyPeers(tx) => {
-                            info!("Send peer ids, needed by player()");
                             let mut peers = vec![];
 
                             for (&id, peer) in self.peers.iter() {
@@ -202,7 +202,7 @@ impl WebRTCSocket {
         id: Uuid,
         tx: mpsc::UnboundedSender<PeerMessage>,
     ) -> anyhow::Result<()> {
-        info!("New peer with id: {id}");
+        debug!("New peer with id: {id}");
         let peer = self.peers.entry(id).or_insert(
             Peer::new(self.id, id, &self.rtc_config, tx, self.in_data_tx.clone()).await?,
         );
@@ -218,7 +218,7 @@ impl WebRTCSocket {
         offer: RTCSessionDescription,
         tx: mpsc::UnboundedSender<PeerMessage>,
     ) -> anyhow::Result<()> {
-        info!("I {}, got offer! {id} {:?}", self.user(), offer);
+        debug!("{} got offer from {id}. Offer is: {:?}", self.user(), offer);
         let peer = self.peers.entry(id).or_insert(
             Peer::new(self.id, id, &self.rtc_config, tx, self.in_data_tx.clone()).await?,
         );
@@ -233,7 +233,10 @@ impl WebRTCSocket {
         id: Uuid,
         answer: RTCSessionDescription,
     ) -> anyhow::Result<()> {
-        info!("I {}, got answer {id} {answer:?}", self.user());
+        debug!(
+            "{} got answer from {id}. Answer is: {answer:?}",
+            self.user()
+        );
         if let Some(peer) = self.peers.get(&id) {
             peer.handle_answer(answer).await?;
         }

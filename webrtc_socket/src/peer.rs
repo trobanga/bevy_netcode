@@ -56,8 +56,8 @@ impl Peer {
         incoming_data_tx: mpsc::UnboundedSender<Packet>,
     ) -> anyhow::Result<Self> {
         let connection = Self::create_peer_connection(config).await?;
+        let outgoing_data_channel = Self::create_data_channel(&connection).await?;
         let ready = Arc::new(Mutex::new(false));
-        let outgoing_data_channel = Self::create_data_channel(&connection, ready.clone()).await?;
         let peer = Self {
             id,
             peer_id,
@@ -112,7 +112,7 @@ impl Peer {
                 Box::pin(async move {
                     if let Some(candidate) = c {
                         let candidate = candidate.to_json().await.unwrap().candidate;
-                        info!(?candidate);
+                        debug!(?candidate);
                         let msg = PeerMessage {
                             peer_id,
                             content: Message::IceCandidate { id, candidate },
@@ -127,7 +127,6 @@ impl Peer {
 
     async fn create_data_channel(
         connection: &RTCPeerConnection,
-        ready: Arc<Mutex<bool>>,
     ) -> anyhow::Result<Arc<RTCDataChannel>> {
         let config = RTCDataChannelInit {
             ordered: Some(false),
@@ -137,14 +136,8 @@ impl Peer {
         };
 
         let data_channel = connection.create_data_channel("data", Some(config)).await?;
-
-        let ready2 = ready.clone();
         data_channel
-            .on_open(Box::new(move || {
-                Box::pin(async move {
-                    *ready2.lock().await = true;
-                })
-            }))
+            .on_open(Box::new(move || Box::pin(async move {})))
             .await;
 
         // Register text message handling
