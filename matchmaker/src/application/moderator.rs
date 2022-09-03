@@ -83,5 +83,19 @@ impl Handler<Connect> for Moderator {
 impl Handler<Disconnect> for Moderator {
     type Result = ();
 
-    fn handle(&mut self, _msg: Disconnect, _ctx: &mut Self::Context) -> Self::Result {}
+    fn handle(&mut self, msg: Disconnect, ctx: &mut Self::Context) -> Self::Result {
+        let id = msg.id;
+        if !self.clients.contains_key(&id) {
+            return;
+        }
+
+        let _ = self.clients.remove(&id);
+        for client in self.clients.values() {
+            client
+                .send(Message::PeerDisconnected { id })
+                .into_actor(self)
+                .then(|_, _, _| fut::ready(()))
+                .wait(ctx);
+        }
+    }
 }

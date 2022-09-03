@@ -1,3 +1,4 @@
+use tokio::sync::mpsc::UnboundedSender;
 use uuid::Uuid;
 use webrtc::peer_connection::sdp::session_description::RTCSessionDescription;
 
@@ -5,6 +6,9 @@ use webrtc::peer_connection::sdp::session_description::RTCSessionDescription;
 pub enum Message {
     Id(Uuid),
     NewPeer {
+        id: Uuid,
+    },
+    PeerDisconnected {
         id: Uuid,
     },
     Offer {
@@ -25,4 +29,9 @@ pub enum Message {
 pub struct PeerMessage {
     pub peer_id: Uuid,
     pub content: Message,
+}
+
+#[derive(Debug)]
+pub enum StateMessage {
+    ReadyPeers(UnboundedSender<Vec<Uuid>>),
 }

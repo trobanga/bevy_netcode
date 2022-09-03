@@ -70,7 +70,12 @@ impl Handler<moderator::Message> for WsClient {
                 info!("Ok, told her");
             }
             moderator::Message::Peers(peers) => self.peers = peers,
-            moderator::Message::PeerDisconnected { id: _ } => todo!(),
+            moderator::Message::PeerDisconnected { id } => {
+                if self.peers.remove(&id).is_some() {
+                    let msg = webrtc_socket::message::Message::PeerDisconnected { id };
+                    ctx.text(serde_json::to_string(&msg).unwrap());
+                }
+            }
             moderator::Message::PeerMessage(msg) => {
                 debug!(?msg);
                 ctx.text(serde_json::to_string(&msg).unwrap());
@@ -118,8 +123,9 @@ impl Actor for WsClient {
 
     fn stopping(&mut self, _: &mut Self::Context) -> Running {
         // notify chat server
-        self.moderator
-            .do_send(moderator::Disconnect { id: self.id });
+        let id = self.id;
+        info!("{id} disconnected");
+        self.moderator.do_send(moderator::Disconnect { id });
         Running::Stop
     }
 }

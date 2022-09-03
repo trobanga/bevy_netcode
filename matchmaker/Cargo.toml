@@ -15,22 +15,22 @@ name = "matchmaker"
 actix = "0.13.0"
 actix-web = "4.1.0"
 actix-web-actors = "4.1.0"
-anyhow = "1.0.62"
+anyhow = "1.0.63"
 argon2 = "0.4.1"
 base64 = "0.13.0"
 webrtc_socket = { path = "../webrtc_socket" }
 diesel = { version = "2.0.0", features = ["r2d2", "uuid", "postgres"] }
 diesel_migrations = "2.0.0"
 dotenv = "0.15.0"
-futures-util = { version = "0.3.23", features = ["sink"] }
+futures-util = { version = "0.3.24", features = ["sink"] }
 rand = "0.8.5"
 secrecy = { version = "0.8.0", features = ["serde"] }
-serde = { version = "1.0.143", features = ["derive"] }
+serde = { version = "1.0.144", features = ["derive"] }
 serde_json = "1.0.85"
-thiserror = "1.0.32"
+thiserror = "1.0.33"
 tokio = { version = "1.20.1", features = ["macros", "rt-multi-thread"] }
 tracing = "0.1.36"
-tracing-subscriber = { version = "0.3.15", features = ["env-filter"]}
+tracing-subscriber = { version = "0.3.15", features = ["env-filter"] }
 url = "2.2.2"
 uuid = { version = "1.1.2", features = ["serde", "v4"] }
 features = "0.10.0"
