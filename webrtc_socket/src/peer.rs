@@ -1,7 +1,7 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use getset::Getters;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::mpsc;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 use webrtc::{
@@ -56,8 +56,8 @@ impl Peer {
         incoming_data_tx: mpsc::UnboundedSender<Packet>,
     ) -> anyhow::Result<Self> {
         let connection = Self::create_peer_connection(config).await?;
-        let outgoing_data_channel = Self::create_data_channel(&connection).await?;
         let ready = Arc::new(Mutex::new(false));
+        let outgoing_data_channel = Self::create_data_channel(&connection).await?;
         let peer = Self {
             id,
             peer_id,
@@ -185,7 +185,7 @@ impl Peer {
                     channel
                         .on_open(Box::new(move || {
                             Box::pin(async move {
-                                *ready2.lock().await = true;
+                                *ready2.lock().unwrap() = true;
                             })
                         }))
                         .await;
@@ -205,7 +205,7 @@ impl Peer {
     }
 
     pub async fn ready(&self) -> bool {
-        *self.ready.lock().await
+        *self.ready.lock().unwrap()
     }
 
     pub async fn handshake_offer(&self) -> anyhow::Result<PeerMessage> {
